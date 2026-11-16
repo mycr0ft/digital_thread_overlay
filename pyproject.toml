@@ -1,0 +1,22 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "digital-thread-overlay"
+version = "0.1.0"
+description = "Evidence-backed assertions across artifacts no single tool owns"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MPL-2.0" }
+dependencies = ["pydantic>=2"]
+
+[project.scripts]
+dtob = "digital_thread_overlay.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/digital_thread_overlay"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
