@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.10", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e . pytest
+      - name: tests
+        run: python -m pytest -q
+      # rdflib is optional: it only exercises the Turtle parse test, so it is installed
+      # in a separate step to prove the suite passes without it AND with it
+      - name: tests with rdflib
+        run: |
+          pip install rdflib
+          python -m pytest -q
