@@ -56,7 +56,7 @@ def test_edit_changes_identity(ledger, tree):
 # 2 ---------------------------------------------------------------------------
 def test_edit_makes_the_claim_stale_and_does_not_repair_it(ledger, tree):
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:sysml:Vehicle", predicate="correspondsToProduct",
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:sysml:Vehicle", predicate="correspondsToProduct",
                   object="urn:step242:CTC-01", baseline=pinned.id, level=Level.STRUCTURE)
     ledger.append(a)
 
@@ -75,7 +75,7 @@ def test_edit_makes_the_claim_stale_and_does_not_repair_it(ledger, tree):
 def test_staleness_distinguishes_a_move_from_an_edit(ledger, tree):
     """Same content under a new name is a move; the claim is not stale."""
     pinned = pin(ledger, tree)
-    ledger.append(Assertion(subject="urn:s", predicate="p", object="urn:o",
+    ledger.append(Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o",
                             baseline=pinned.id))
     moved = tree.parent / "elsewhere"
     moved.mkdir()
@@ -89,7 +89,7 @@ def test_staleness_distinguishes_a_move_from_an_edit(ledger, tree):
 # 3 ---------------------------------------------------------------------------
 def test_review_moves_status_not_level(ledger, tree):
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id,
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id,
                   level=Level.ASSERTED)
     ledger.append(a)
     reviewed = operations.review(ledger, a, reviewer="jrf", note="looks right")
@@ -103,7 +103,7 @@ def test_review_moves_status_not_level(ledger, tree):
 # 4 ---------------------------------------------------------------------------
 def test_manual_review_cannot_promote(ledger, tree):
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
     ledger.append(a)
     from digital_thread_overlay.model import ManualReview
     with pytest.raises(ValueError, match="not objective evidence"):
@@ -115,7 +115,7 @@ def test_manual_review_cannot_promote(ledger, tree):
 
 def test_failed_check_cannot_promote(ledger, tree):
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
     ledger.append(a)
     with pytest.raises(ValueError, match="must have passed"):
         operations.promote(ledger, a, operations.tool_run("check", "m", passed=False))
@@ -125,7 +125,7 @@ def test_failed_check_cannot_promote(ledger, tree):
 
 def test_passing_check_promotes_one_step(ledger, tree):
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id,
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id,
                   level=Level.STRUCTURE)
     ledger.append(a)
     promoted = operations.promote(ledger, a, operations.tool_run("check", "m", passed=True))
@@ -139,9 +139,9 @@ def test_passing_check_promotes_one_step(ledger, tree):
 def test_a_verified_assertion_cannot_be_constructed_without_evidence():
     """The gate is in the type: an unearned L4 record cannot even be built."""
     with pytest.raises(ValueError, match="requires objective evidence"):
-        Assertion(subject="s", predicate="p", object="o", baseline="bl:x",
+        Assertion(source_anchor="urn:test:anchor", subject="s", predicate="p", object="o", baseline="bl:x",
                   level=Level.VERIFIED)
-    ok = Assertion(subject="s", predicate="p", object="o", baseline="bl:x",
+    ok = Assertion(source_anchor="urn:test:anchor", subject="s", predicate="p", object="o", baseline="bl:x",
                    level=Level.VERIFIED,
                    evidence=[operations.tool_run("t", "m", passed=True)])
     assert ok.level == Level.VERIFIED
@@ -150,7 +150,7 @@ def test_a_verified_assertion_cannot_be_constructed_without_evidence():
 # 5 ---------------------------------------------------------------------------
 def test_ledger_has_no_destructive_operation(ledger, tree):
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
     ledger.append(a)
     for name in ("delete", "update", "remove", "drop"):
         assert not hasattr(ledger, name), f"Ledger exposes {name}: the ledger is append-only"
@@ -160,7 +160,7 @@ def test_ledger_has_no_destructive_operation(ledger, tree):
 def test_appending_the_same_claim_twice_is_visible_not_silently_deduped(ledger, tree):
     """Idempotence is the caller's business; the ledger records what it was told twice."""
     pinned = pin(ledger, tree)
-    a = Assertion(subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:s", predicate="p", object="urn:o", baseline=pinned.id)
     ledger.append(a)
     ledger.append(a)
     rows = query.trace(ledger, "urn:s")

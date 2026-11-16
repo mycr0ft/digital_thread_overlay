@@ -34,6 +34,11 @@ class Baseline(BaseModel):
     """A pinned configuration: the artifacts and the digests they had."""
 
     artifacts: list[Artifact] = Field(default_factory=list)
+    # Derived payloads: what an adapter extracted about an artifact (its facts digest).
+    # The paper's baseline band says "artifacts and derived payloads", and the distinction
+    # matters: a sidecar's facts can change while the artifact does not, and a baseline that
+    # covered only the artifact would miss exactly the staleness it exists to detect.
+    derived: list[Artifact] = Field(default_factory=list)
     created: str = ""
     label: str = ""
 
@@ -41,7 +46,8 @@ class Baseline(BaseModel):
     def id(self) -> str:
         """sha256 over (kind, digest) pairs only - content, never location."""
         payload = json.dumps(
-            sorted([a.kind, a.sha256] for a in self.artifacts),
+            sorted([[a.kind, a.sha256] for a in self.artifacts] +
+                   [["derived:" + d.kind, d.sha256] for d in self.derived]),
             separators=(",", ":"))
         return "bl:" + hashlib.sha256(payload.encode()).hexdigest()[:16]
 
@@ -89,6 +95,18 @@ def create(paths, kinds: dict[str, str] | None = None, label: str = "") -> Basel
                     label=label)
 
 
+def add_derived(baseline: Baseline, extractions) -> Baseline:
+    """Attach adapter digests to a baseline, so derived facts are part of its identity."""
+    derived = []
+    for extraction in extractions:
+        derived.append(Artifact(kind=f"extracted-{extraction.kind}",
+                                sha256=extraction.sha256,
+                                size=len(extraction.facts),
+                                path=f"{extraction.adapter}:{extraction.path}"))
+    baseline.derived = sorted(derived, key=lambda a: a.path)
+    return baseline
+
+
 def staleness(pinned: Baseline, current: Baseline) -> list[dict]:
     """Which artifacts a claim was made against have changed since.
 
@@ -109,6 +127,12 @@ def staleness(pinned: Baseline, current: Baseline) -> list[dict]:
             changes.append({"path": old.path, "was": old.sha256, "now": None,
                             "change": "removed"})
         # else: the same content is present under another path, which is a move, not a change
+
+    for old in pinned.derived:
+        now = next((d.sha256 for d in current.derived if d.path == old.path), None)
+        if now is not None and now != old.sha256:
+            changes.append({"path": old.path, "was": old.sha256, "now": now,
+                            "change": "derived-changed"})
     return changes
 
 

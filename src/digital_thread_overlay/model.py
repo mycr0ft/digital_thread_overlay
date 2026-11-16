@@ -104,6 +104,17 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+class Validity(BaseModel):
+    """When the claim is held to be true, where that is known.
+
+    The paper calls this the one optional field: a claim without a window is a claim
+    about "now", and a claim with one can outlive its evidence in a way a reader can see.
+    """
+
+    valid_from: str = ""
+    valid_until: str = ""
+
+
 class Assertion(BaseModel):
     """One qualified relationship, immutable once written."""
 
@@ -117,6 +128,12 @@ class Assertion(BaseModel):
     created: str = Field(default_factory=_now)
     supersedes: str | None = None     # append-only: corrections point back at what they replace
     note: str = ""
+    # Where in each artifact the claim attaches. The paper's list names the source anchor;
+    # the target anchor is the same idea applied to the other end, because a relationship
+    # anchored at one end only is still ambiguous when you go to check it.
+    source_anchor: str = ""
+    target_anchor: str = ""
+    validity: Validity | None = None
 
     @model_validator(mode="after")
     def _gate(self):
@@ -134,6 +151,10 @@ class Assertion(BaseModel):
                 raise ValueError(
                     f"{self.level.value} requires objective evidence that passed; "
                     f"manual review raises status, not level")
+        if self.level not in (Level.LOCATOR, Level.IDENTITY) and not self.source_anchor:
+            raise ValueError(
+                f"{self.level.value} needs a source anchor: a claim you cannot locate in "
+                f"the artifact cannot be checked, and an uncheckable claim is a rumour")
         if self.level in (Level.LOCATOR, Level.IDENTITY, Level.STRUCTURE) and \
                 self.status == Status.VERIFIED:
             raise ValueError(
@@ -152,7 +173,8 @@ class Assertion(BaseModel):
             [self.subject, self.predicate, self.object, self.baseline, self.level.value,
              self.status.value,
              [e.model_dump(mode="json") for e in self.evidence],
-             self.supersedes],
+             self.supersedes, self.source_anchor, self.target_anchor,
+             self.validity.model_dump(mode="json") if self.validity else None],
             sort_keys=True, separators=(",", ":"), default=str)
         return "as:" + hashlib.sha256(payload.encode()).hexdigest()[:16]
 

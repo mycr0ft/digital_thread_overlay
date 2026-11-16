@@ -28,6 +28,8 @@ def review(ledger: Ledger, assertion: Assertion, reviewer: str, note: str = "") 
         evidence=list(assertion.evidence) + [ManualReview(reviewer=reviewer, note=note)],
         supersedes=assertion.id,
         note=("reviewed: " + note) if note else "reviewed",
+        source_anchor=assertion.source_anchor, target_anchor=assertion.target_anchor,
+        validity=assertion.validity,
     )
     ledger.append(replacement)
     return replacement
@@ -60,6 +62,8 @@ def promote(ledger: Ledger, assertion: Assertion, evidence: Evidence) -> Asserti
         evidence=list(assertion.evidence) + [evidence],
         supersedes=assertion.id,
         note=f"promoted to {target.value} on {evidence.kind}",
+        source_anchor=assertion.source_anchor, target_anchor=assertion.target_anchor,
+        validity=assertion.validity,
     )
     ledger.append(replacement)
     return replacement

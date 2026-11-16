@@ -91,7 +91,7 @@ def ledger_with_claim(tmp_path, step_file):
     b = baselines.create([step_file])
     ledger.put_baseline(b)
     ledger.set_current(b.id)
-    a = Assertion(subject="urn:sysml:Vehicle", predicate="correspondsToProduct",
+    a = Assertion(source_anchor="urn:test:anchor", subject="urn:sysml:Vehicle", predicate="correspondsToProduct",
                   object="urn:step242:CTC-01", baseline=b.id, level=Level.STRUCTURE)
     ledger.append(a)
     return ledger, a
@@ -116,7 +116,7 @@ def test_projection_records_a_tool_run_as_an_activity_with_an_agent(tmp_path, st
     b = baselines.create([step_file])
     ledger.put_baseline(b)
     ledger.set_current(b.id)
-    a = Assertion(subject="s", predicate="p", object="o", baseline=b.id)
+    a = Assertion(source_anchor="urn:test:anchor", subject="s", predicate="p", object="o", baseline=b.id)
     ledger.append(a)
     operations.promote(ledger, a, operations.tool_run("step242", "structure-check",
                                                       passed=True, version="0.4.0"))

@@ -135,12 +135,39 @@ grows.
 | Field | Why it is there |
 |---|---|
 | subject, predicate, object | what is claimed |
+| source_anchor, target_anchor | where in each artifact the claim attaches; an L2+ claim without one is refused, because a claim you cannot locate cannot be checked |
 | baseline | which revision of which artifacts it was claimed against |
 | level | how strong the claim is: a locator is not a verification |
 | status | where it sits in review |
-| evidence | the tool run, interface check or review behind it |
+| evidence | the check that ran, or the review that happened |
+| validity | an optional window; the one field the paper calls optional |
 | supersedes | which earlier record this replaces, for a correction |
 | created | when it was recorded |
+
+## Checks, not verdicts
+
+`promote --result pass` records an operator's word. `verify` runs a check and takes the
+verdict from the check:
+
+```sh
+dtob verify as:d324482a256c1f59 --check "name-occurs:art/part.stp"
+as:1f617489eef025b3  L3  requires-review  on name-occurs over part.stp (output 847219b1d2082939)
+
+dtob verify <id> --check "command:step242 structure-check art/part.stp"
+dtob verify <id> --check "command:not-a-real-tool --check"
+refused: command not runnable: not-a-real-tool produced no verdict; recorded as:283b… at L3
+```
+
+A failing check and an unrunnable one are both recorded — the attempt is evidence — and
+neither raises the level. A missing tool reports **no verdict**, which the gate treats as
+unsupported: absence of a check must never read as a pass.
+
+## Baselines cover derived payloads too
+
+`dtob baseline --with-adapters` folds each adapter's extraction digest into the baseline
+identity, because the paper's baseline band says "artifacts and derived payloads". Without
+it, an extractor change that alters what the overlay knows would leave the baseline
+untouched, and staleness would miss precisely the case it exists to catch.
 
 ## What this does not do
 

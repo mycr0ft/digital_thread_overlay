@@ -10,9 +10,9 @@ import json
 import sys
 from pathlib import Path
 
-from . import adapters, baselines, operations, prov, query
+from . import adapters, baselines, checks, operations, prov, query
 from .ledger import Ledger
-from .model import Assertion, Level, Status
+from .model import Assertion, Level, Status, ToolRun, Validity
 
 
 def _ledger(args) -> Ledger:
@@ -22,14 +22,21 @@ def _ledger(args) -> Ledger:
 def cmd_baseline(args) -> int:
     ledger = _ledger(args)
     baseline = baselines.create(args.paths, label=args.label)
+    if getattr(args, "with_adapters", False):
+        # derived payloads are part of the identity: an extractor change that alters what
+        # the overlay knows must move the baseline, even when every artifact is untouched
+        baseline = baselines.add_derived(baseline, [adapters.extract(p) for p in args.paths])
     if not baseline.artifacts:
         print("no files matched; nothing pinned", file=sys.stderr)
         return 1
     ledger.put_baseline(baseline)
     ledger.set_current(baseline.id)
-    print(f"{baseline.id}  {len(baseline.artifacts)} artifacts")
+    print(f"{baseline.id}  {len(baseline.artifacts)} artifacts"
+          f"{f', {len(baseline.derived)} derived' if baseline.derived else ''}")
     for a in baseline.artifacts:
         print(f"  {a.kind:8s} {a.sha256[:12]}  {a.path}")
+    for d in baseline.derived:
+        print(f"  derived  {d.kind:22s} {d.sha256[:12]}  {d.path}")
     return 0
 
 
@@ -40,10 +47,16 @@ def cmd_assert(args) -> int:
         print("no baseline: run `baseline` first or pass --baseline", file=sys.stderr)
         return 1
     try:
+        validity = None
+        if args.valid_from or args.valid_until:
+            validity = Validity(valid_from=args.valid_from or "",
+                                valid_until=args.valid_until or "")
         assertion = Assertion(
             subject=args.subject, predicate=args.predicate, object=args.object,
             baseline=baseline_id, level=Level(args.level),
             status=Status.ASSERTED, note=args.note or "",
+            source_anchor=args.anchor or "", target_anchor=args.target_anchor or "",
+            validity=validity,
         )
         ledger.append(assertion)
     except (ValueError, KeyError) as e:
@@ -79,6 +92,52 @@ def cmd_promote(args) -> int:
         print(f"refused: {e}", file=sys.stderr)
         return 2
     print(f"{updated.id}  {updated.level.value}  {updated.status.value}")
+    return 0
+
+
+def cmd_verify(args) -> int:
+    """Run a check; promote only if the check itself passed.
+
+    This is the difference between evidence and a typed claim: the verdict in the record is
+    the one the check produced, and a check that could not run records no verdict at all.
+    """
+    ledger = _ledger(args)
+    target = _find(ledger, args.id)
+    if target is None:
+        print(f"no assertion {args.id}", file=sys.stderr)
+        return 1
+
+    try:
+        check = checks.parse_check(args.check)
+    except ValueError as e:
+        print(f"bad check: {e}", file=sys.stderr)
+        return 1
+
+    verdict = check.run(target.subject, target.object)
+    evidence = ToolRun(tool=verdict.tool, version=verdict.version,
+                       method=verdict.method, passed=verdict.passed,
+                       output_digest=verdict.output_digest)
+
+    if verdict.passed is not True:
+        # the attempt is recorded, the level is not raised: a failed check is evidence and
+        # a missing tool is not a pass
+        record = Assertion(
+            subject=target.subject, predicate=target.predicate, object=target.object,
+            baseline=target.baseline, level=target.level, status=Status.REQUIRES_REVIEW,
+            evidence=list(target.evidence) + [evidence], supersedes=target.id,
+            source_anchor=target.source_anchor, target_anchor=target.target_anchor,
+            validity=target.validity,
+            note=f"check {verdict.method}: "
+                 f"{'failed' if verdict.passed is False else 'no verdict'}")
+        ledger.append(record)
+        print(f"refused: {verdict.method} "
+              f"{'failed' if verdict.passed is False else 'produced no verdict'}; "
+              f"recorded {record.id} at {record.level.value}", file=sys.stderr)
+        return 2
+
+    updated = operations.promote(ledger, target, evidence)
+    print(f"{updated.id}  {updated.level.value}  {updated.status.value}  "
+          f"on {verdict.method} (output {verdict.output_digest or 'none'})")
     return 0
 
 
@@ -175,6 +234,8 @@ def build_parser() -> argparse.ArgumentParser:
     b = sub.add_parser("baseline", help="pin a content-addressed baseline")
     b.add_argument("paths", nargs="+")
     b.add_argument("--label", default="")
+    b.add_argument("--with-adapters", action="store_true",
+                   help="include adapter extractions as derived payloads in the identity")
     b.set_defaults(func=cmd_baseline)
 
     a = sub.add_parser("assert", help="record a relationship claim")
@@ -185,6 +246,10 @@ def build_parser() -> argparse.ArgumentParser:
                    choices=[lvl.value for lvl in Level])
     a.add_argument("--baseline", default=None)
     a.add_argument("--note", default="")
+    a.add_argument("--anchor", default="", help="where in the subject artifact the claim attaches")
+    a.add_argument("--target-anchor", default="", help="where in the object artifact")
+    a.add_argument("--valid-from", default="")
+    a.add_argument("--valid-until", default="")
     a.set_defaults(func=cmd_assert)
 
     r = sub.add_parser("review", help="a human confirms a claim (status only)")
@@ -200,6 +265,12 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--method", required=True)
     pr.add_argument("--result", required=True, choices=["pass", "fail", "no-verdict"])
     pr.set_defaults(func=cmd_promote)
+
+    v = sub.add_parser("verify", help="run a check and promote on its verdict")
+    v.add_argument("id")
+    v.add_argument("--check", required=True,
+                   help="name-occurs:<artifact> or command:<shell command>")
+    v.set_defaults(func=cmd_verify)
 
     t = sub.add_parser("trace", help="what is claimed about an element")
     t.add_argument("subject")
