@@ -10,7 +10,7 @@ import json
 import sys
 from pathlib import Path
 
-from . import baselines, operations, query
+from . import adapters, baselines, operations, prov, query
 from .ledger import Ledger
 from .model import Assertion, Level, Status
 
@@ -105,6 +105,48 @@ def cmd_stale(args) -> int:
     return 0
 
 
+def cmd_extract(args) -> int:
+    """Show what an adapter can justify about a file, and how it got there."""
+    rows = []
+    for path in args.paths:
+        extraction = adapters.extract(path)
+        rows.append(extraction.as_dict())
+        print(f"{Path(path).name}  kind={extraction.kind}  adapter={extraction.adapter}"
+              f"{'  TRUNCATED' if extraction.truncated else ''}")
+        print(f"  sha256 {extraction.sha256[:16]}  {extraction.size} bytes")
+        for fact in extraction.facts:
+            print(f"  {fact.key:22s} {fact.value[:60]:60s} "
+                  f"[{fact.method} @ {fact.anchor}]")
+        if not extraction.facts:
+            print("  (identity only: no adapter claims this format, which is honest rather "
+                  "than guessed)")
+    if args.json:
+        print(json.dumps(rows, indent=1))
+    return 0
+
+
+def cmd_sidecar(args) -> int:
+    """Write facts beside an artifact without touching it."""
+    path = Path(args.path)
+    adapter = adapters.SidecarAdapter()
+    facts = [adapters.Fact(key=k, value=v, method="manual entry", anchor="cli")
+             for k, v in (item.split("=", 1) for item in args.fact)]
+    side = adapter.write(path, facts)
+    print(f"wrote {side}  ({len(facts)} facts, artifact unchanged)")
+    return 0
+
+
+def cmd_prov(args) -> int:
+    """Project the ledger onto PROV-O."""
+    text = prov.project(_ledger(args))
+    if args.out:
+        Path(args.out).write_text(text)
+        print(f"wrote {args.out}  ({len(text.splitlines())} lines of Turtle)")
+    else:
+        print(text)
+    return 0
+
+
 def cmd_report(args) -> int:
     print(query.report(_ledger(args)))
     return 0
@@ -169,6 +211,20 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("stale", help="claims whose baseline has been superseded")
     s.set_defaults(func=cmd_stale)
+
+    x = sub.add_parser("extract", help="what an adapter can justify about a file")
+    x.add_argument("paths", nargs="+")
+    x.add_argument("--json", action="store_true")
+    x.set_defaults(func=cmd_extract)
+
+    sc = sub.add_parser("sidecar", help="write facts beside an artifact (never into it)")
+    sc.add_argument("path")
+    sc.add_argument("--fact", action="append", default=[], metavar="KEY=VALUE")
+    sc.set_defaults(func=cmd_sidecar)
+
+    pv = sub.add_parser("prov", help="project the ledger onto PROV-O (Turtle)")
+    pv.add_argument("--out", default="")
+    pv.set_defaults(func=cmd_prov)
 
     rep = sub.add_parser("report", help="counts and the staleness headline")
     rep.set_defaults(func=cmd_report)
