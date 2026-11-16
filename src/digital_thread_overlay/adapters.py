@@ -183,7 +183,15 @@ def default_adapters() -> list[Adapter]:
 
 
 def extract(path, adapters: list[Adapter] | None = None) -> Extraction:
-    """First adapter that claims the file; otherwise identity only, honestly labelled."""
+    """First adapter that claims the target; otherwise identity only, honestly labelled.
+
+    A URL is a façade: there is nothing on disk to hash, so the façade adapter reads the
+    service instead. The import is local because facade imports this module for Fact.
+    """
+    target = str(path)
+    if target.startswith(("http://", "https://")):
+        from .facade import FacadeAdapter
+        return FacadeAdapter().extract(target)
     path = Path(path)
     for adapter in (adapters or default_adapters()):
         if adapter.handles(path):

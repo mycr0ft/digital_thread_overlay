@@ -54,7 +54,7 @@ are about what an adapter is allowed to do to the file:
 
 | Pattern | When | What it may do |
 |---|---|---|
-| façade | the artifact has a service | read it; add nothing |
+| façade | the artifact has a service | read it; add nothing (implemented) |
 | shadow | no service exists | extract selected facts into a derived graph |
 | sidecar | the file must not be touched | write facts beside it, keyed by digest |
 
@@ -67,6 +67,31 @@ labelling a scan as a parse is how a thread acquires confident nonsense.
 The sidecar pairs facts with the digest of the content they describe, so a sidecar that
 was not regenerated after an edit is visibly stale (`sidecar-stale`) rather than silently
 authoritative.
+
+`FacadeAdapter` reads a live OSLC service and is read-only by construction: the fetcher
+contract carries no method, so there is no code path that could POST. It reads each kind in
+both renderings and records a `rendering-mismatch` fact when RDF and JSON-LD disagree,
+because a service disagreeing with itself is a finding rather than an inconvenience.
+
+```sh
+dtob extract http://127.0.0.1:5099/oslc/sysml
+sysml  kind=oslc-service  adapter=oslc-facade/1
+  facade:root-status          405
+  facade:element:resources    142
+  facade:partDefinition:resources  25
+  facade:relationship:resources    0
+```
+
+A service has no bytes to hash, so the identity is a digest over the descriptions actually
+received - labelled `digest_of="served-descriptions"` so nobody mistakes it for a digest of
+the artifact. The root status is reported as `facade:root-status` rather than a health
+verdict: a collection root usually answers 405 to GET, which says nothing about the service.
+
+Live check (needs a server, so it is skipped by default):
+
+```sh
+DTO_FACADE_URL=http://127.0.0.1:5099/oslc/sysml pytest tests/test_facade_live.py
+```
 
 ```sh
 dtob extract art/part.stp
